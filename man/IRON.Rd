@@ -58,5 +58,5 @@ qiron(p = 0.5, tau = 0.5, shape = 1, scale = 1) #Birnbaum-Saunders distribution
 riron(n = 10, tau = 0.5, shape = 1, scale = 1) #Birnbaum-Saunders distribution
 }
 \author{
-Manoel Santos-Neto \email{manoel.ferreira at professor.ufcg.edu.br} and Diego I. Gallardo \email{diego.gallardo.mateluna at gmail.com}
+Manoel Santos-Neto \email{santosneto@dema.ufc.br} and Diego I. Gallardo \email{diego.gallardo.mateluna@gmail.com}
 }

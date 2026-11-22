@@ -80,7 +80,9 @@ envelope(
 quant_reg is used to fit quantile regression models, specified by giving a symbolic description of the linear predictor and a description of the kernel.
 }
 \examples{
-
+if (requireNamespace("VGAM", quietly = TRUE)) {
+  y <- VGAM::rbisa(100, shape = 4, scale = 1)
+}
 set.seed(2)
 y <- VGAM::rbisa(100, shape = 4, scale = 1)
 fit <- quant_reg(y ~ 1, link = 'log', family = 'normal', tau = 0.5, out.list = TRUE)

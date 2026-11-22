@@ -25,7 +25,7 @@
 #'
 #'@return diron gives the density, piron gives the distribution function, qiron gives the quantile function and riron generate pseudo-random numbers.
 #' 
-#'@author Manoel Santos-Neto \email{manoel.ferreira at professor.ufcg.edu.br} and Diego I. Gallardo \email{diego.gallardo.mateluna at gmail.com}
+#'@author Manoel Santos-Neto \email{santosneto@dema.ufc.br} and Diego I. Gallardo \email{diego.gallardo.mateluna@gmail.com}
 #'
 #' 
 #'@examples 
@@ -38,24 +38,58 @@
 #' @importFrom stats pgamma 
 #'@import gamlss
 
-diron <- function(x, family = "norm", tau, shape, scale, kappa = NULL, log = FALSE, ...){
-  g <- get(paste("d", family, sep = ""), mode = "function")
-  G <- get(paste("p", family, sep = ""), mode = "function")
-  
-  a   <- -log(tau)/log(2)
-  a.x <- (1.0/shape) * (sqrt(x/scale) - sqrt(scale/x))
-  #A.x <- x^(-3/2) * (x + scale)/(2 * shape * sqrt(scale))
-  
-  if (family != 'PE2') {
-    log.f <- log(a) + g(x = a.x, log = TRUE, ...) + (a - 1)*G(q = a.x, log.p = TRUE, ...) - (3/2) * log(x) + log(x + scale) - log(2) - log(shape) - (1/2) * log(scale) 
-  } else{
-    term1 <- 0.5
-    term2 <- (sign(a.x)/2)*(1/gamma(1/kappa))*pgamma(q = a.x, shape = 1/kappa)
-    log.f <- log(a) + log(kappa) - log(2) - lgamma(1/kappa) - exp(kappa*log(abs(a.x))) + (a - 1)*(log(term1 + term2)) - (3/2) * log(x) + log(x + scale) - log(2) - log(shape) - (1/2) * log(scale) 
+diron <- function(x, family = "norm", tau, shape, scale,
+                  kappa = NULL, log = FALSE, ...) {
+  # As verificacoes do ramo PE2 ocorrem antes das transformacoes,
+  # evitando avisos desnecessarios para propostas fora do dominio.
+  if (family == "PE2" &&
+      (is.null(kappa) || length(kappa) != 1L ||
+       !is.finite(kappa) || kappa <= 0 ||
+       length(tau) != 1L || !is.finite(tau) || tau <= 0 || tau >= 1 ||
+       any(!is.finite(x)) || any(x <= 0) ||
+       any(!is.finite(shape)) || any(shape <= 0) ||
+       any(!is.finite(scale)) || any(scale <= 0))) {
+    return(rep(if (log) -Inf else 0, length(x)))
   }
-  if (!log) log.f <- exp(log.f)
   
-  log.f
+  a <- -log(tau) / log(2)
+  a.x <- (sqrt(x / scale) - sqrt(scale / x)) / shape
+  
+  # Jacobiano da transformacao Birnbaum-Saunders.
+  log_jac <- -(3 / 2) * log(x) + log(x + scale) -
+    log(2) - log(shape) - (1 / 2) * log(scale)
+  
+  if (family != "PE2") {
+    g <- get(paste0("d", family), mode = "function")
+    G <- get(paste0("p", family), mode = "function")
+    
+    log.f <- log(a) +
+      g(x = a.x, log = TRUE, ...) +
+      (a - 1) * G(q = a.x, log.p = TRUE, ...) +
+      log_jac
+  } else {
+    # PE2 padronizada: g(z) = kappa/(2*Gamma(1/kappa)) * exp(-|z|^kappa)
+    u <- abs(a.x)^kappa
+    log_g <- log(kappa) - log(2) - lgamma(1 / kappa) - u
+    
+    # Q(s,u) = P(Gamma(shape=s) > u), avaliada diretamente na cauda.
+    log_upper <- stats::pgamma(u, shape = 1 / kappa,
+                               lower.tail = FALSE, log.p = TRUE)
+    
+    # G_PE2(z) = Q(1/kappa, |z|^kappa)/2,                   z < 0
+    #          = 1 - Q(1/kappa, z^kappa)/2,                z >= 0
+    # Evitar subtracao de probabilidades muito proximas de 1.
+    left <- a.x < 0
+    log_G <- numeric(length(a.x))
+    log_G[left] <- -log(2) + log_upper[left]
+    log_G[!left] <- log1p(-0.5 * exp(log_upper[!left]))
+    
+    # Para tau = 0.5, a = 1 e a parcela da CDF desaparece.
+    cdf_part <- if (a == 1) 0 else (a - 1) * log_G
+    log.f <- log(a) + log_g + cdf_part + log_jac
+  }
+  
+  if (log) log.f else exp(log.f)
 }
 
 #'@name IRON
@@ -63,15 +97,62 @@ diron <- function(x, family = "norm", tau, shape, scale, kappa = NULL, log = FAL
 #'@aliases qiron
 #'
 #'@export
-qiron <- function(p, shape, scale, tau, family = "norm", ...){ 
-  Q <- get(paste("q", family, sep = ""), mode = "function")
-  a   <- -log(tau)/log(2)
-  p.new <- p^(1/a) 
-  z.p <- Q(p = p.new, ...)
-  term1 <- (shape/2) * z.p
-  f_q <- scale * ((term1 + sqrt( (term1^2) + 1))^2)
+#'
+qiron <- function(p, shape, scale, tau, family = "norm", ...) {
+  a <- -log(tau) / log(2)
   
-  f_q
+  if (identical(family, "PE2")) {
+    dots <- list(...)
+    nu <- if (is.null(dots$nu)) 2 else dots$nu
+    mu <- if (is.null(dots$mu)) 0 else dots$mu
+    sigma <- if (is.null(dots$sigma)) 1 else dots$sigma
+    
+    if (length(tau) != 1L || !is.finite(tau) || tau <= 0 || tau >= 1 ||
+        length(nu) != 1L || !is.finite(nu) || nu <= 0 ||
+        length(mu) != 1L || !is.finite(mu) ||
+        length(sigma) != 1L || !is.finite(sigma) || sigma <= 0 ||
+        anyNA(p) || any(!is.finite(p)) || any(p < 0 | p > 1) ||
+        anyNA(shape) || any(!is.finite(shape)) || any(shape <= 0) ||
+        anyNA(scale) || any(!is.finite(scale)) || any(scale <= 0)) {
+      stop("Invalid parameters or probabilities for the PE2 quantile")
+    }
+    
+    # p* = p^(1/a). Trabalhar com log(p*) evita perda de precisao.
+    log_p_new <- log(p) / a
+    left <- log_p_new < -log(2)
+    z <- numeric(length(p))
+    
+    # PE2: para z < 0, 2*p* = P(Gamma(1/nu) > |z|^nu).
+    # Informar o LOG da probabilidade de cauda evita calcular 1 - 2*p*.
+    if (any(left)) {
+      tail_logprob <- log(2) + log_p_new[left]
+      z[left] <- -stats::qgamma(
+        tail_logprob, shape = 1 / nu,
+        lower.tail = FALSE, log.p = TRUE
+      )^(1 / nu)
+    }
+    
+    # Para z >= 0, 2*(1-p*) = P(Gamma(1/nu) > z^nu).
+    # -expm1(log_p_new) calcula 1 - p* com estabilidade perto de p*=1.
+    if (any(!left)) {
+      log_one_minus_pnew <- log(-expm1(log_p_new[!left]))
+      tail_logprob <- log(2) + log_one_minus_pnew
+      z[!left] <- stats::qgamma(
+        tail_logprob, shape = 1 / nu,
+        lower.tail = FALSE, log.p = TRUE
+      )^(1 / nu)
+    }
+    z.p <- mu + sigma * z
+  } else {
+    Q <- get(paste0("q", family), mode = "function")
+    p.new <- p^(1 / a)
+    z.p <- Q(p = p.new, ...)
+  }
+  
+  # (t + sqrt(1+t^2))^2 = exp(2*asinh(t)); nao ocorre
+  # cancelamento para t negativo e grande em modulo.
+  term1 <- (shape / 2) * z.p
+  scale * exp(2 * asinh(term1))
 }
 
 #'@name IRON
@@ -155,7 +236,9 @@ riron <- function(n, shape, scale, tau, family = "normal", df = 4, kappa = NULL,
 #'
 #'
 #'@examples
-#'
+#' if (requireNamespace("VGAM", quietly = TRUE)) {
+#'   y <- VGAM::rbisa(100, shape = 4, scale = 1)
+#' }
 #'set.seed(2)
 #'y <- VGAM::rbisa(100, shape = 4, scale = 1)
 #'fit <- quant_reg(y ~ 1, link = 'log', family = 'normal', tau = 0.5, out.list = TRUE)
@@ -306,13 +389,13 @@ quant_reg <- function(formula, link = 'identity', family = 'normal', tau = 0.5, 
     
     
     var.y <- var(Y)
-    fnToFindRoot = function(kappa,vx){
+    fnToFindRoot = function(kappa, vx){
       return(gamma(3/kappa)/gamma(1/kappa) - vx)
     }
     kappa_est <- uniroot(fnToFindRoot, c(0.01,1000), tol = 0.0001, vx = var.y)$root 
     
     fit0 <- quant_reg(formula, family = 'normal', link = link, tau = tau, data = data, out.list = TRUE)$coef
-    start_par <- c(fit0[1], kappa = kappa_est, fit0[-1])
+    start_par <- c(fit0[1], kappa = 0.5, fit0[-1])
     
     
     options(warn = -1)   # Disable warning messages globally  
@@ -432,12 +515,12 @@ res_quant <- function(model){
 #'@importFrom grDevices dev.new
 #'@importFrom graphics identify
 
-cooks_dist <- function(model, npoints = 0, plot = FALSE, data, cex=1, ...)
+cooks_dist <- function(model, npoints = 0, plot = FALSE, data, cex = 1, ...)
 {
   
   y <- model$y
   theta <- model$coefficients
-  inv.lpp <- model$vcov
+  inv.lpp <- solve(model$vcov)
   n <- length(y)    
   values <- vector()
   npar <- length(theta)

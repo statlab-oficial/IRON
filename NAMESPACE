@@ -11,18 +11,22 @@ export(riron)
 import(gamlss)
 importFrom(ggplot2,ggplot)
 importFrom(grDevices,dev.new)
-importFrom(graphics,identify)
-importFrom(graphics,par)
+importFrom(graphics,
+  identify,
+  par
+)
 importFrom(maxLik,maxLik)
-importFrom(stats,AIC)
-importFrom(stats,Gamma)
-importFrom(stats,glm)
-importFrom(stats,make.link)
-importFrom(stats,model.matrix)
-importFrom(stats,pgamma)
-importFrom(stats,qnorm)
-importFrom(stats,qqnorm)
-importFrom(stats,rnorm)
-importFrom(stats,runif)
-importFrom(stats,uniroot)
-importFrom(stats,var)
+importFrom(stats,
+  AIC,
+  Gamma,
+  glm,
+  make.link,
+  model.matrix,
+  pgamma,
+  qnorm,
+  qqnorm,
+  rnorm,
+  runif,
+  uniroot,
+  var
+)
